@@ -1,0 +1,299 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "classifier_schema_1",
+  "title": "RedditPostClassification",
+  "description": "Output schema for the 17-theme Reddit post classifier (v1). Canonical source: docs/classifier_prompt.md. Pass 2 open-ended extraction is a separate step on posts where pass2_needed=true.",
+  "type": "object",
+  "required": ["post_id", "subreddit", "classifications", "meta"],
+  "additionalProperties": false,
+  "properties": {
+    "post_id": { "type": "string" },
+    "subreddit": { "type": "string" },
+    "classifications": {
+      "type": "object",
+      "required": [
+        "q01_existential_reflection",
+        "q02_future_confidence",
+        "q03_parasocial_attachment",
+        "q04_problematic_engagement",
+        "q05_anthropomorphization",
+        "q06_vulnerable_populations",
+        "q07_model_change_harm",
+        "q08_human_relationships",
+        "q09_judgment_substitution",
+        "q10_cognitive_offloading",
+        "q11_data_provenance_trust",
+        "q12_usage_norms",
+        "q13_ai_validation",
+        "q14_ease_of_access",
+        "q15_pace_of_change",
+        "q16_informational_ecosystem",
+        "q17_disintermediation"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "q01_existential_reflection": {
+          "type": "object",
+          "required": ["present", "valence"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "valence": {
+              "type": ["string", "null"],
+              "enum": ["positive", "negative", "mixed", null],
+              "description": "Null when present=false. positive=excitement/optimism, negative=grief/angst/pessimism, mixed=both."
+            }
+          }
+        },
+        "q02_future_confidence": {
+          "type": "object",
+          "required": ["present", "direction"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "direction": {
+              "type": ["string", "null"],
+              "enum": ["more_confident", "less_confident", "mixed", null],
+              "description": "Null when present=false."
+            }
+          }
+        },
+        "q03_parasocial_attachment": {
+          "type": "object",
+          "required": ["present", "disposition"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "disposition": {
+              "type": ["string", "null"],
+              "enum": ["favorable", "negative", "mixed", null],
+              "description": "Null when present=false. Covers the attachment itself, not anthropomorphization (see q05)."
+            }
+          }
+        },
+        "q04_problematic_engagement": {
+          "type": "object",
+          "required": ["present", "engagement_patterns", "addiction"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "engagement_patterns": {
+              "type": ["boolean", "null"],
+              "description": "True if specific behavioral patterns are described (daily habits, inability to stop, time displacement). Null when present=false."
+            },
+            "addiction": {
+              "type": ["boolean", "null"],
+              "description": "True if the behavior is explicitly framed as addictive or compulsive. Null when present=false."
+            }
+          }
+        },
+        "q05_anthropomorphization": {
+          "type": "object",
+          "required": ["present", "disposition"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "disposition": {
+              "type": ["string", "null"],
+              "enum": ["favorable", "negative", "mixed", null],
+              "description": "Null when present=false. Distinct from q03: this is about attributing human qualities, not emotional attachment."
+            }
+          }
+        },
+        "q06_vulnerable_populations": {
+          "type": "object",
+          "required": ["present", "company_responsibility_mentioned"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "company_responsibility_mentioned": {
+              "type": ["boolean", "null"],
+              "description": "True only if post explicitly discusses what AI companies should/shouldn't do. Null when present=false. Flag for Pass 2."
+            }
+          }
+        },
+        "q07_model_change_harm": {
+          "type": "object",
+          "required": ["present", "user_proposes_remedy"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "user_proposes_remedy": {
+              "type": ["boolean", "null"],
+              "description": "True only if post explicitly suggests a remedy. Null when present=false. Flag for Pass 2."
+            }
+          }
+        },
+        "q08_human_relationships": {
+          "type": "object",
+          "required": ["present", "avoidance", "loneliness", "adjudication", "adjudication_norms_proposed"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "avoidance": {
+              "type": ["boolean", "null"],
+              "description": "AI enabling withdrawal from human contact. Null when present=false."
+            },
+            "loneliness": {
+              "type": ["boolean", "null"],
+              "description": "AI's relationship to loneliness (alleviating or deepening). Null when present=false."
+            },
+            "adjudication": {
+              "type": ["boolean", "null"],
+              "description": "AI used to make decisions affecting people (discipline, grading, hiring). Distinct from avoidance/loneliness. Null when present=false."
+            },
+            "adjudication_norms_proposed": {
+              "type": ["boolean", "null"],
+              "description": "True only if post proposes norms for AI in adjudication. Null when present=false. Flag for Pass 2."
+            }
+          }
+        },
+        "q09_judgment_substitution": {
+          "type": "object",
+          "required": ["present"],
+          "additionalProperties": false,
+          "properties": {
+            "present": {
+              "type": "boolean",
+              "description": "AI replacing human decision-making authority. Distinct from q10 (skill atrophy)."
+            }
+          }
+        },
+        "q10_cognitive_offloading": {
+          "type": "object",
+          "required": ["present", "learning_impact", "cheating"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "learning_impact": {
+              "type": ["boolean", "null"],
+              "description": "Effects on skill development or educational outcomes. Null when present=false."
+            },
+            "cheating": {
+              "type": ["boolean", "null"],
+              "description": "Academic dishonesty specifically. Null when present=false."
+            }
+          }
+        },
+        "q11_data_provenance_trust": {
+          "type": "object",
+          "required": ["present", "solutions_proposed"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "solutions_proposed": {
+              "type": ["boolean", "null"],
+              "description": "True if post suggests ways to address provenance/trust (detection, watermarking, disclosure norms). Null when present=false. Flag for Pass 2."
+            }
+          }
+        },
+        "q12_usage_norms": {
+          "type": "object",
+          "required": ["present", "acceptability_discussed", "actor_specific_norms"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "acceptability_discussed": {
+              "type": ["boolean", "null"],
+              "description": "User expresses views on what level or type of AI use is acceptable. Null when present=false."
+            },
+            "actor_specific_norms": {
+              "type": ["boolean", "null"],
+              "description": "User distinguishes appropriate use by role (teachers vs students, etc.). Null when present=false."
+            }
+          }
+        },
+        "q13_ai_validation": {
+          "type": "object",
+          "required": ["present", "unreasonable_validation"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "unreasonable_validation": {
+              "type": ["boolean", "null"],
+              "description": "AI validates something a reasonable neutral observer would deem unfounded/unhealthy. Conservative bar. Null when present=false."
+            }
+          }
+        },
+        "q14_ease_of_access": {
+          "type": "object",
+          "required": ["present", "friction_view"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "friction_view": {
+              "type": ["string", "null"],
+              "enum": ["wants_more_friction", "wants_less_friction", "neutral", null],
+              "description": "Null when present=false. neutral = discusses ease of access without taking a position."
+            }
+          }
+        },
+        "q15_pace_of_change": {
+          "type": "object",
+          "required": ["present", "emotional_reaction"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "emotional_reaction": {
+              "type": ["string", "null"],
+              "enum": ["anxious", "excited", "resigned", "angry", "mixed", null],
+              "description": "Dominant emotional tone. Null when present=false."
+            }
+          }
+        },
+        "q16_informational_ecosystem": {
+          "type": "object",
+          "required": ["present", "direction"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "direction": {
+              "type": ["string", "null"],
+              "enum": ["helpful", "polluting", "mixed", null],
+              "description": "Null when present=false."
+            }
+          }
+        },
+        "q17_disintermediation": {
+          "type": "object",
+          "required": ["present", "mechanism_described"],
+          "additionalProperties": false,
+          "properties": {
+            "present": { "type": "boolean" },
+            "mechanism_described": {
+              "type": ["boolean", "null"],
+              "description": "True if post describes a specific concrete mechanism, not just abstract concern. Null when present=false. Flag for Pass 2."
+            }
+          }
+        }
+      }
+    },
+    "meta": {
+      "type": "object",
+      "required": ["themes_detected_count", "confidence", "ambiguous_themes", "pass2_needed"],
+      "additionalProperties": false,
+      "properties": {
+        "themes_detected_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 17,
+          "description": "Count of themes where present=true."
+        },
+        "confidence": {
+          "type": "string",
+          "enum": ["high", "medium", "low"],
+          "description": "Overall classifier confidence. low = ambiguous, very short, or sarcastic post."
+        },
+        "ambiguous_themes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Theme keys where classification was uncertain. Empty array if none."
+        },
+        "pass2_needed": {
+          "type": "boolean",
+          "description": "True if any of these sub-fields are true: company_responsibility_mentioned, user_proposes_remedy, adjudication_norms_proposed, solutions_proposed, mechanism_described."
+        }
+      }
+    }
+  }
+}

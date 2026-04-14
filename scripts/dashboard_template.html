@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI Societal Impact — Reddit Classifier Results</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+  :root {
+    --bg: #ffffff; --bg2: #f5f5f4; --bg3: #ececea;
+    --text: #1a1a1a; --text2: #555550; --text3: #888883;
+    --border: #e0e0dc; --radius: 8px;
+    --accent: #5B52CC;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+  button { font-family: inherit; }
+  select { font-family: inherit; background: var(--bg2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>const DATA = /*__DATA__*/{};</script>
+<script type="text/babel">
+const { useState, useMemo } = React;
+
+const THEME_LABELS = {
+  q01: "Existential reflection", q02: "Future confidence", q03: "Parasocial attachment",
+  q04: "Problematic engagement", q05: "Anthropomorphization", q06: "Vulnerable populations",
+  q07: "Model change harm", q08: "Human relationships", q09: "Judgment substitution",
+  q10: "Cognitive offloading", q11: "Data provenance & trust", q12: "Usage norms",
+  q13: "AI validation", q14: "Ease of access", q15: "Pace of change",
+  q16: "Informational ecosystem", q17: "Disintermediation",
+};
+const THEME_KEYS = Object.keys(THEME_LABELS);
+const SUBREDDITS = Object.keys(DATA.subCounts).sort((a, b) => DATA.subCounts[b] - DATA.subCounts[a]);
+
+const SUB_COLORS = {
+  "r/replika": "#7F56D9", "r/teachers": "#16A34A", "r/singularity": "#DC6A27",
+  "r/ExperiencedDevs": "#2563EB", "r/ChatGPT": "#DB2777",
+};
+const VALENCE_COLORS = {
+  positive: "#16A34A", negative: "#DC2626", mixed: "#D97706",
+  favorable: "#16A34A", more_confident: "#16A34A", less_confident: "#DC2626",
+  helpful: "#16A34A", polluting: "#DC2626", anxious: "#DC2626", excited: "#16A34A",
+  resigned: "#71717A", angry: "#9F1239", wants_more_friction: "#DC6A27",
+  wants_less_friction: "#2563EB", neutral: "#71717A",
+};
+const VALENCE_LABELS = {
+  positive: "Positive", negative: "Negative", mixed: "Mixed", favorable: "Favorable",
+  more_confident: "More confident", less_confident: "Less confident", helpful: "Helpful",
+  polluting: "Polluting", anxious: "Anxious", excited: "Excited", resigned: "Resigned",
+  angry: "Angry", wants_more_friction: "Wants more friction",
+  wants_less_friction: "Wants less friction", neutral: "Neutral",
+};
+
+const EXTRACTION_LABELS = {
+  company_responsibility: "Company responsibility",
+  proposed_remedy: "Proposed remedy",
+  adjudication_norms: "Adjudication norms",
+  provenance_solutions: "Provenance solutions",
+  disintermediation_mechanism: "Disintermediation mechanism",
+};
+
+const TABS = ["Overview", "Theme prevalence", "Sentiment breakdowns", "Post browser", "Pass 2 extractions"];
+const EXTRACTION_KEYS = Object.keys(EXTRACTION_LABELS);
+
+function SubredditFilter({ selected, onSelect }) {
+  return (
+    <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+      <button onClick={() => onSelect("All")} style={{
+        padding: "4px 12px", fontSize: 12, borderRadius: 99, cursor: "pointer",
+        background: selected === "All" ? "var(--text)" : "transparent",
+        color: selected === "All" ? "var(--bg)" : "var(--text2)",
+        border: selected === "All" ? "none" : "1px solid var(--border)",
+      }}>All subreddits</button>
+      {SUBREDDITS.map((sub) => (
+        <button key={sub} onClick={() => onSelect(sub)} style={{
+          padding: "4px 12px", fontSize: 12, borderRadius: 99, cursor: "pointer",
+          background: selected === sub ? SUB_COLORS[sub] || "#666" : "transparent",
+          color: selected === sub ? "#fff" : "var(--text2)",
+          border: selected === sub ? "none" : "1px solid var(--border)",
+        }}>{sub}</button>
+      ))}
+    </div>
+  );
+}
+
+function MetricCard({ label, value, sub }) {
+  return (
+    <div style={{ background: "var(--bg2)", borderRadius: "var(--radius)", padding: "1rem 1.25rem", flex: "1 1 0", minWidth: 140 }}>
+      <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 4 }}>{label}</div>
+      <div style={{ fontSize: 24, fontWeight: 600 }}>{value}</div>
+      {sub && <div style={{ fontSize: 12, color: "var(--text3)", marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function Exemplars() {
+  const postMap = {};
+  DATA.posts.forEach((p) => { postMap[p.id] = p; });
+
+  return (
+    <div style={{ marginBottom: 32 }}>
+      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Featured exemplars</div>
+      <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16 }}>
+        Five posts selected to illustrate the range of AI's societal impact across communities
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {DATA.exemplars.map((ex) => {
+          const post = postMap[ex.id];
+          if (!post) return null;
+          return (
+            <div key={ex.id} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "16px 20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <span style={{
+                  fontSize: 11, padding: "2px 8px", borderRadius: 99,
+                  background: (SUB_COLORS[post.subreddit] || "#666") + "18",
+                  color: SUB_COLORS[post.subreddit] || "#666", fontWeight: 600,
+                }}>{post.subreddit}</span>
+                <span style={{ fontSize: 11, color: "var(--text3)" }}>{post.themes_detected_count} themes detected</span>
+              </div>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, lineHeight: 1.4 }}>{post.title}</div>
+              <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.6, fontStyle: "italic", marginBottom: 8, borderLeft: "3px solid var(--border)", paddingLeft: 12 }}>
+                "{ex.snippet}"
+              </div>
+              <div style={{ fontSize: 12, color: "var(--accent)", fontWeight: 500, marginBottom: 6 }}>{ex.why}</div>
+              {post.permalink && (
+                <a href={post.permalink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>
+                  View on Reddit ↗
+                </a>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ThemePrevalenceChart({ selectedSub }) {
+  const chartData = useMemo(() => {
+    return THEME_KEYS.map((q) => {
+      const row = { theme: THEME_LABELS[q], key: q };
+      if (selectedSub === "All") {
+        SUBREDDITS.forEach((sub) => { row[sub] = (DATA.prevalence[sub] || {})[q] || 0; });
+        row.total = SUBREDDITS.reduce((s, sub) => s + ((DATA.prevalence[sub] || {})[q] || 0), 0);
+      } else {
+        row[selectedSub] = (DATA.prevalence[selectedSub] || {})[q] || 0;
+        row.total = row[selectedSub];
+      }
+      return row;
+    }).sort((a, b) => b.total - a.total);
+  }, [selectedSub]);
+
+  const subs = selectedSub === "All" ? SUBREDDITS : [selectedSub];
+  const maxVal = Math.max(...chartData.map((d) => d.total), 1);
+
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 16 }}>
+        Posts flagged per theme {selectedSub !== "All" ? `in ${selectedSub}` : "across all subreddits"}
+      </div>
+      <div>
+        {chartData.map((row) => (
+          <div key={row.key} style={{ display: "flex", alignItems: "center", marginBottom: 8, gap: 8 }}>
+            <div style={{ width: 160, fontSize: 12, color: "var(--text2)", textAlign: "right", flexShrink: 0 }}>
+              {row.theme}
+            </div>
+            <div style={{ flex: 1, display: "flex", height: 24, borderRadius: 4, overflow: "hidden", background: "var(--bg3)" }}>
+              {subs.map((sub) => (
+                <div key={sub} style={{
+                  width: `${((row[sub] || 0) / maxVal) * 100}%`,
+                  background: SUB_COLORS[sub] || "#666",
+                  minWidth: (row[sub] || 0) > 0 ? 2 : 0,
+                }} title={`${sub}: ${row[sub] || 0} posts`} />
+              ))}
+            </div>
+            <div style={{ width: 40, fontSize: 12, fontWeight: 600, textAlign: "right", flexShrink: 0 }}>
+              {row.total}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 16, marginTop: 16, flexWrap: "wrap" }}>
+        {subs.map((sub) => (
+          <div key={sub} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text2)" }}>
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: SUB_COLORS[sub] || "#666", display: "inline-block" }} />
+            {sub}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ValenceBreakdown({ selectedSub }) {
+  const valenceSource = DATA.valenceData[selectedSub] || DATA.valenceData["All"] || {};
+  const themes = Object.entries(valenceSource).filter(([, v]) => Object.keys(v).length > 0);
+
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 20 }}>
+        {selectedSub === "All"
+          ? "Valence and disposition breakdowns across all subreddits"
+          : `Valence and disposition breakdowns for ${selectedSub}`}
+      </div>
+      {themes.length === 0 ? (
+        <div style={{ fontSize: 13, color: "var(--text3)", padding: 20 }}>No valence data for this selection.</div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
+          {themes.map(([q, vals]) => {
+            const total = Object.values(vals).reduce((s, v) => s + v, 0);
+            return (
+              <div key={q} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "1rem 1.25rem" }}>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{THEME_LABELS[q]}</div>
+                <div style={{ display: "flex", height: 28, borderRadius: 4, overflow: "hidden", marginBottom: 10 }}>
+                  {Object.entries(vals).map(([k, v]) => (
+                    <div key={k} style={{
+                      width: `${(v / total) * 100}%`,
+                      background: VALENCE_COLORS[k] || "#888",
+                      minWidth: v > 0 ? 2 : 0,
+                    }} title={`${VALENCE_LABELS[k] || k}: ${Math.round((v / total) * 100)}%`} />
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                  {Object.entries(vals).map(([k, v]) => (
+                    <div key={k} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text2)" }}>
+                      <span style={{ width: 8, height: 8, borderRadius: 2, background: VALENCE_COLORS[k] || "#888", display: "inline-block" }} />
+                      {VALENCE_LABELS[k] || k} {Math.round((v / total) * 100)}%
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PostCard({ post }) {
+  const confColor = { high: "#16A34A", medium: "#D97706", low: "#DC2626" };
+  const PREVIEW_LEN = 200;
+  const preview = post.body && post.body.length > PREVIEW_LEN ? post.body.slice(0, PREVIEW_LEN) + "..." : post.body;
+  const hasExtractions = post.extractions && Object.keys(post.extractions).length > 0;
+
+  return (
+    <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "12px 16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 6 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.4 }}>{post.title}</div>
+        <div style={{
+          fontSize: 11, padding: "2px 8px", borderRadius: 99,
+          background: confColor[post.confidence] + "14", color: confColor[post.confidence],
+          fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0,
+        }}>{post.confidence}</div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+        <span style={{
+          fontSize: 11, padding: "2px 8px", borderRadius: 99,
+          background: (SUB_COLORS[post.subreddit] || "#666") + "18",
+          color: SUB_COLORS[post.subreddit] || "#666", fontWeight: 600,
+        }}>{post.subreddit}</span>
+        {post.themes.map((q) => (
+          <span key={q} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "var(--bg3)", color: "var(--text2)" }}>
+            {THEME_LABELS[q]}
+          </span>
+        ))}
+        {post.pass2_needed && (
+          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "#D9770614", color: "#D97706", fontWeight: 600 }}>
+            Pass 2
+          </span>
+        )}
+      </div>
+      {preview && <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.5, marginBottom: 6 }}>{preview}</div>}
+      {hasExtractions && (
+        <div style={{ marginTop: 6, marginBottom: 6, padding: "8px 12px", background: "var(--bg)", borderRadius: 6, borderLeft: "3px solid #D97706" }}>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#D97706", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+            Pass 2 Extractions
+          </div>
+          {Object.entries(post.extractions).map(([key, value]) => (
+            <div key={key} style={{ marginBottom: 4 }}>
+              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{EXTRACTION_LABELS[key] || key}: </span>
+              <span style={{ fontSize: 12, color: "var(--text2)" }}>{value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {post.permalink && (
+        <a href={post.permalink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>
+          View on Reddit ↗
+        </a>
+      )}
+    </div>
+  );
+}
+
+function PostBrowser() {
+  const [filterSub, setFilterSub] = useState("All");
+  const [filterTheme, setFilterTheme] = useState("All");
+  const [filterConf, setFilterConf] = useState("All");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 25;
+
+  const filtered = useMemo(() => {
+    setPage(0);
+    return DATA.posts.filter((p) => {
+      if (filterSub !== "All" && p.subreddit !== filterSub) return false;
+      if (filterTheme !== "All" && !p.themes.includes(filterTheme)) return false;
+      if (filterConf !== "All" && p.confidence !== filterConf) return false;
+      return true;
+    });
+  }, [filterSub, filterTheme, filterConf]);
+
+  const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <select value={filterSub} onChange={(e) => setFilterSub(e.target.value)} style={{ fontSize: 13 }}>
+          <option value="All">All subreddits</option>
+          {SUBREDDITS.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={filterTheme} onChange={(e) => setFilterTheme(e.target.value)} style={{ fontSize: 13 }}>
+          <option value="All">All themes</option>
+          {THEME_KEYS.map((q) => <option key={q} value={q}>{THEME_LABELS[q]}</option>)}
+        </select>
+        <select value={filterConf} onChange={(e) => setFilterConf(e.target.value)} style={{ fontSize: 13 }}>
+          <option value="All">All confidence</option>
+          <option value="high">High confidence</option>
+          <option value="medium">Medium confidence</option>
+          <option value="low">Low confidence</option>
+        </select>
+        <div style={{ fontSize: 13, color: "var(--text2)", display: "flex", alignItems: "center" }}>
+          {filtered.length} posts
+        </div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {paged.map((post) => <PostCard key={post.id} post={post} />)}
+      </div>
+      {totalPages > 1 && (
+        <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "center", alignItems: "center" }}>
+          <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0}
+                  style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--border)" }}>Prev</button>
+          <span style={{ fontSize: 12, color: "var(--text2)" }}>{page + 1} / {totalPages}</span>
+          <button onClick={() => setPage(Math.min(totalPages - 1, page + 1))} disabled={page >= totalPages - 1}
+                  style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--border)" }}>Next</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExtractionBrowser() {
+  const [filterSub, setFilterSub] = useState("All");
+  const [filterType, setFilterType] = useState("All");
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 25;
+
+  const filtered = useMemo(() => {
+    setPage(0);
+    return DATA.posts.filter((p) => {
+      if (!p.extractions || Object.keys(p.extractions).length === 0) return false;
+      if (filterSub !== "All" && p.subreddit !== filterSub) return false;
+      if (filterType !== "All" && !p.extractions[filterType]) return false;
+      return true;
+    });
+  }, [filterSub, filterType]);
+
+  const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+
+  const typeCounts = useMemo(() => {
+    const counts = {};
+    EXTRACTION_KEYS.forEach((k) => {
+      counts[k] = DATA.posts.filter((p) => p.extractions && p.extractions[k]).length;
+    });
+    return counts;
+  }, []);
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ fontSize: 13 }}>
+          <option value="All">All extraction types</option>
+          {EXTRACTION_KEYS.map((k) => (
+            <option key={k} value={k}>{EXTRACTION_LABELS[k]} ({typeCounts[k]})</option>
+          ))}
+        </select>
+        <select value={filterSub} onChange={(e) => setFilterSub(e.target.value)} style={{ fontSize: 13 }}>
+          <option value="All">All subreddits</option>
+          {SUBREDDITS.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <div style={{ fontSize: 13, color: "var(--text2)", display: "flex", alignItems: "center" }}>
+          {filtered.length} posts
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+        {EXTRACTION_KEYS.map((k) => (
+          <div key={k} onClick={() => setFilterType(filterType === k ? "All" : k)}
+               style={{
+                 padding: "8px 14px", borderRadius: "var(--radius)", cursor: "pointer",
+                 background: filterType === k ? "#D9770614" : "var(--bg2)",
+                 border: filterType === k ? "1px solid #D97706" : "1px solid var(--border)",
+               }}>
+            <div style={{ fontSize: 18, fontWeight: 600, color: filterType === k ? "#D97706" : "var(--text)" }}>{typeCounts[k]}</div>
+            <div style={{ fontSize: 11, color: "var(--text2)" }}>{EXTRACTION_LABELS[k]}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {paged.map((post) => {
+          const entries = Object.entries(post.extractions).filter(([k]) =>
+            filterType === "All" || k === filterType
+          );
+          return (
+            <div key={post.id} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "12px 16px" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
+                <span style={{
+                  fontSize: 11, padding: "2px 8px", borderRadius: 99, flexShrink: 0,
+                  background: (SUB_COLORS[post.subreddit] || "#666") + "18",
+                  color: SUB_COLORS[post.subreddit] || "#666", fontWeight: 600,
+                }}>{post.subreddit}</span>
+                <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.4 }}>{post.title}</div>
+              </div>
+              {entries.map(([key, value]) => (
+                <div key={key} style={{ marginBottom: 8, padding: "8px 12px", background: "var(--bg)", borderRadius: 6, borderLeft: "3px solid #D97706" }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#D97706", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    {EXTRACTION_LABELS[key] || key}
+                  </div>
+                  <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>{value}</div>
+                </div>
+              ))}
+              {post.permalink && (
+                <a href={post.permalink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>
+                  View on Reddit ↗
+                </a>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {totalPages > 1 && (
+        <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "center", alignItems: "center" }}>
+          <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0}
+                  style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--border)" }}>Prev</button>
+          <span style={{ fontSize: 12, color: "var(--text2)" }}>{page + 1} / {totalPages}</span>
+          <button onClick={() => setPage(Math.min(totalPages - 1, page + 1))} disabled={page >= totalPages - 1}
+                  style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--border)" }}>Next</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Dashboard() {
+  const [activeTab, setActiveTab] = useState(0);
+  const [selectedSub, setSelectedSub] = useState("All");
+  const [sentimentSub, setSentimentSub] = useState("All");
+
+  const totalClassified = Object.values(DATA.subCounts).reduce((s, v) => s + v, 0);
+  const totalThemeHits = DATA.posts.reduce((s, p) => s + p.themes.length, 0);
+  const avgThemesPerPost = (totalThemeHits / totalClassified).toFixed(1);
+
+  return (
+    <div style={{ padding: "2rem", maxWidth: 960, margin: "0 auto" }}>
+      <div style={{ marginBottom: 24 }}>
+        <h1 style={{ fontSize: 22, fontWeight: 600, margin: "0 0 4px" }}>
+          AI societal impact — Reddit classifier results
+        </h1>
+        <div style={{ fontSize: 13, color: "var(--text3)" }}>
+          17-theme multi-label classification across {SUBREDDITS.length} subreddits · {totalClassified.toLocaleString()} posts · google/gemini-3-flash-preview via OpenRouter
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
+        <MetricCard label="Posts classified" value={totalClassified.toLocaleString()} sub={`across ${SUBREDDITS.length} subreddits`} />
+        <MetricCard label="Theme detections" value={totalThemeHits.toLocaleString()} sub={`${avgThemesPerPost} themes/post avg`} />
+        <MetricCard label="High confidence" value={`${DATA.confidenceDist.high}%`} sub={`${DATA.confidenceDist.low}% flagged low`} />
+        <MetricCard label="Pass 2 extracted" value={DATA.extractedCount || 0} sub={`of ${DATA.pass2Count} flagged`} />
+      </div>
+
+      <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", marginBottom: 20 }}>
+        {TABS.map((tab, i) => (
+          <button key={tab} onClick={() => setActiveTab(i)}
+            style={{
+              padding: "8px 16px", fontSize: 13, fontWeight: activeTab === i ? 600 : 400,
+              color: activeTab === i ? "var(--text)" : "var(--text2)",
+              background: "transparent", border: "none",
+              borderBottom: activeTab === i ? "2px solid var(--text)" : "2px solid transparent",
+              cursor: "pointer", marginBottom: -1,
+            }}>{tab}</button>
+        ))}
+      </div>
+
+      {activeTab === 0 && (
+        <div>
+          <Exemplars />
+          <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 16 }}>
+            Distribution of classified posts by subreddit
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
+            {SUBREDDITS.map((sub) => (
+              <div key={sub} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "12px 16px", flex: "1 1 140px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: SUB_COLORS[sub] || "#666" }} />
+                  <span style={{ fontSize: 13, fontWeight: 600 }}>{sub}</span>
+                </div>
+                <div style={{ fontSize: 20, fontWeight: 600 }}>{DATA.subCounts[sub]}</div>
+                <div style={{ fontSize: 12, color: "var(--text3)" }}>
+                  {Math.round((DATA.subCounts[sub] / totalClassified) * 100)}% of corpus
+                </div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Top themes overall</div>
+          {(() => {
+            const sorted = THEME_KEYS.map((q) => ({
+              key: q, label: THEME_LABELS[q],
+              total: SUBREDDITS.reduce((s, sub) => s + ((DATA.prevalence[sub] || {})[q] || 0), 0),
+            })).sort((a, b) => b.total - a.total).slice(0, 7);
+            const max = sorted[0].total || 1;
+            return sorted.map((t) => (
+              <div key={t.key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <div style={{ width: 150, fontSize: 12, color: "var(--text2)", textAlign: "right", flexShrink: 0 }}>{t.label}</div>
+                <div style={{ flex: 1, background: "var(--bg3)", borderRadius: 4, height: 20, overflow: "hidden" }}>
+                  <div style={{ width: `${(t.total / max) * 100}%`, height: "100%", background: "var(--accent)", borderRadius: 4 }} />
+                </div>
+                <div style={{ width: 35, fontSize: 12, fontWeight: 600, textAlign: "right", flexShrink: 0 }}>{t.total}</div>
+              </div>
+            ));
+          })()}
+        </div>
+      )}
+
+      {activeTab === 1 && (
+        <div>
+          <SubredditFilter selected={selectedSub} onSelect={setSelectedSub} />
+          <ThemePrevalenceChart selectedSub={selectedSub} />
+        </div>
+      )}
+
+      {activeTab === 2 && (
+        <div>
+          <SubredditFilter selected={sentimentSub} onSelect={setSentimentSub} />
+          <ValenceBreakdown selectedSub={sentimentSub} />
+        </div>
+      )}
+
+      {activeTab === 3 && <PostBrowser />}
+      {activeTab === 4 && <ExtractionBrowser />}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<Dashboard />);
+</script>
+</body>
+</html>
