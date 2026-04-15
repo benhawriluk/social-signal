@@ -20,6 +20,26 @@
   select { font-family: inherit; background: var(--bg2); color: var(--text); border: 1px solid var(--border); border-radius: 4px; padding: 4px 8px; }
   a { color: var(--accent); text-decoration: none; }
   a:hover { text-decoration: underline; }
+  .theme-tip { position: relative; cursor: help; border-bottom: 1px dotted var(--text3); }
+  .theme-tip::after {
+    content: attr(data-tooltip); position: absolute; bottom: calc(100% + 6px); left: 0;
+    background: var(--text); color: var(--bg); padding: 8px 12px; border-radius: 6px;
+    font-size: 12px; font-weight: 400; font-style: normal; line-height: 1.5;
+    width: max-content; max-width: 300px; white-space: normal;
+    pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 100;
+  }
+  .theme-tip:hover::after { opacity: 1; }
+  .methodology-content { font-size: 14px; line-height: 1.7; color: var(--text); }
+  .methodology-content h1 { font-size: 20px; font-weight: 600; margin: 24px 0 8px; }
+  .methodology-content h2 { font-size: 17px; font-weight: 600; margin: 20px 0 8px; }
+  .methodology-content p { margin: 0 0 12px; }
+  .methodology-content ul, .methodology-content ol { margin: 0 0 12px; padding-left: 24px; }
+  .methodology-content li { margin-bottom: 4px; }
+  .methodology-content table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+  .methodology-content th, .methodology-content td { border: 1px solid var(--border); padding: 6px 10px; text-align: left; }
+  .methodology-content th { background: var(--bg2); font-weight: 600; }
+  .methodology-content strong { font-weight: 600; }
+  .methodology-content code { background: var(--bg2); padding: 2px 6px; border-radius: 3px; font-size: 13px; }
 </style>
 </head>
 <body>
@@ -29,13 +49,34 @@
 const { useState, useMemo } = React;
 
 const THEME_LABELS = {
-  q01: "Existential reflection", q02: "Future confidence", q03: "Parasocial attachment",
+  q01: "Existential reflection", q02: "Future agency", q03: "Parasocial attachment",
   q04: "Problematic engagement", q05: "Anthropomorphization", q06: "Vulnerable populations",
   q07: "Model change harm", q08: "Human relationships", q09: "Judgment substitution",
   q10: "Cognitive offloading", q11: "Data provenance & trust", q12: "Usage norms",
   q13: "AI validation", q14: "Ease of access", q15: "Pace of change",
   q16: "Informational ecosystem", q17: "Disintermediation",
 };
+
+const THEME_DESCRIPTIONS = {
+  q01: "Reflects on how AI affects meaning, identity, or purpose — questioning whether skills or career still matter, grief or excitement about AI's implications for being human.",
+  q02: "Discusses how AI affects confidence in planning or navigating the future — career direction, life decisions, what to invest time in.",
+  q03: "Discusses emotional bonds or attachments formed with AI systems — romantic, companionate, or otherwise.",
+  q04: "Discusses unhealthy, compulsive, or excessive patterns of AI use — inability to stop, time displacement, addiction framing.",
+  q05: "Discusses treating AI as if it were human — attributing feelings, consciousness, personality, or agency to an AI system.",
+  q06: "Discusses AI's impact on psychologically vulnerable people — mental health conditions, neurodivergence, loneliness, grief, children or adolescents.",
+  q07: "Discusses harm caused by changes to an AI model — updates, capability removals, personality shifts, policy changes.",
+  q08: "Discusses AI affecting relationships between humans — withdrawal, loneliness, AI used for decision-making that affects people.",
+  q09: "Discusses AI replacing human judgment — deferring decisions to AI, trusting AI outputs over one's own reasoning.",
+  q10: "Discusses AI causing reduced critical thinking, weakened problem-solving skills, or intellectual dependency.",
+  q11: "Discusses uncertainty about whether content was created by a human or AI — trust issues, suspicion, inability to verify authorship.",
+  q12: "Expresses opinions about what intensity or domain of AI usage is socially acceptable, or about who should be using it and how.",
+  q13: "Discusses AI affirming, reinforcing, or validating a user's thoughts, feelings, beliefs, or decisions.",
+  q14: "Discusses how easy or convenient it is to access and use AI tools — and whether friction should be added or removed.",
+  q15: "Discusses the speed of AI or technological advancement — anxiety, excitement, resignation, or anger about the pace.",
+  q16: "Discusses AI's effect on the quality, reliability, or nature of available information — helpful or polluting.",
+  q17: "Discusses AI replacing or disrupting interactions that previously occurred between humans.",
+};
+
 const THEME_KEYS = Object.keys(THEME_LABELS);
 const SUBREDDITS = Object.keys(DATA.subCounts).sort((a, b) => DATA.subCounts[b] - DATA.subCounts[a]);
 
@@ -58,6 +99,24 @@ const VALENCE_LABELS = {
   wants_less_friction: "Wants less friction", neutral: "Neutral",
 };
 
+// Canonical left-to-right order: negative → mixed → positive
+const VALENCE_ORDER = {
+  q01: ["negative", "mixed", "positive"],
+  q02: ["less_confident", "mixed", "more_confident"],
+  q03: ["negative", "mixed", "favorable"],
+  q05: ["negative", "mixed", "favorable"],
+  q14: ["wants_more_friction", "neutral", "wants_less_friction"],
+  q15: ["angry", "anxious", "resigned", "mixed", "excited"],
+  q16: ["polluting", "mixed", "helpful"],
+};
+
+function orderedValenceKeys(q, vals) {
+  const order = VALENCE_ORDER[q];
+  if (!order) return Object.keys(vals);
+  const present = new Set(Object.keys(vals));
+  return order.filter((k) => present.has(k));
+}
+
 const EXTRACTION_LABELS = {
   company_responsibility: "Company responsibility",
   proposed_remedy: "Proposed remedy",
@@ -66,8 +125,22 @@ const EXTRACTION_LABELS = {
   disintermediation_mechanism: "Disintermediation mechanism",
 };
 
-const TABS = ["Overview", "Theme prevalence", "Sentiment breakdowns", "Post browser", "Pass 2 extractions"];
+const TABS = ["Overview", "Theme prevalence", "Sentiment breakdowns", "Post browser", "Pass 2 extractions", "Trends", "Methodology"];
 const EXTRACTION_KEYS = Object.keys(EXTRACTION_LABELS);
+
+function formatDate(isoStr) {
+  if (!isoStr) return null;
+  const d = new Date(isoStr + "T00:00:00");
+  return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+}
+
+function ThemeLabel({ themeKey, style }) {
+  return (
+    <span className="theme-tip" data-tooltip={THEME_DESCRIPTIONS[themeKey] || ""} style={style}>
+      {THEME_LABELS[themeKey]}
+    </span>
+  );
+}
 
 function SubredditFilter({ selected, onSelect }) {
   return (
@@ -103,7 +176,6 @@ function MetricCard({ label, value, sub }) {
 function Exemplars() {
   const postMap = {};
   DATA.posts.forEach((p) => { postMap[p.id] = p; });
-
   return (
     <div style={{ marginBottom: 32 }}>
       <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Featured exemplars</div>
@@ -122,6 +194,7 @@ function Exemplars() {
                   background: (SUB_COLORS[post.subreddit] || "#666") + "18",
                   color: SUB_COLORS[post.subreddit] || "#666", fontWeight: 600,
                 }}>{post.subreddit}</span>
+                {post.published_at && <span style={{ fontSize: 11, color: "var(--text3)" }}>{formatDate(post.published_at)}</span>}
                 <span style={{ fontSize: 11, color: "var(--text3)" }}>{post.themes_detected_count} themes detected</span>
               </div>
               <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6, lineHeight: 1.4 }}>{post.title}</div>
@@ -130,9 +203,7 @@ function Exemplars() {
               </div>
               <div style={{ fontSize: 12, color: "var(--accent)", fontWeight: 500, marginBottom: 6 }}>{ex.why}</div>
               {post.permalink && (
-                <a href={post.permalink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>
-                  View on Reddit ↗
-                </a>
+                <a href={post.permalink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>View on Reddit ↗</a>
               )}
             </div>
           );
@@ -145,7 +216,7 @@ function Exemplars() {
 function ThemePrevalenceChart({ selectedSub }) {
   const chartData = useMemo(() => {
     return THEME_KEYS.map((q) => {
-      const row = { theme: THEME_LABELS[q], key: q };
+      const row = { key: q };
       if (selectedSub === "All") {
         SUBREDDITS.forEach((sub) => { row[sub] = (DATA.prevalence[sub] || {})[q] || 0; });
         row.total = SUBREDDITS.reduce((s, sub) => s + ((DATA.prevalence[sub] || {})[q] || 0), 0);
@@ -168,8 +239,8 @@ function ThemePrevalenceChart({ selectedSub }) {
       <div>
         {chartData.map((row) => (
           <div key={row.key} style={{ display: "flex", alignItems: "center", marginBottom: 8, gap: 8 }}>
-            <div style={{ width: 160, fontSize: 12, color: "var(--text2)", textAlign: "right", flexShrink: 0 }}>
-              {row.theme}
+            <div style={{ width: 160, fontSize: 12, textAlign: "right", flexShrink: 0 }}>
+              <ThemeLabel themeKey={row.key} />
             </div>
             <div style={{ flex: 1, display: "flex", height: 24, borderRadius: 4, overflow: "hidden", background: "var(--bg3)" }}>
               {subs.map((sub) => (
@@ -180,9 +251,7 @@ function ThemePrevalenceChart({ selectedSub }) {
                 }} title={`${sub}: ${row[sub] || 0} posts`} />
               ))}
             </div>
-            <div style={{ width: 40, fontSize: 12, fontWeight: 600, textAlign: "right", flexShrink: 0 }}>
-              {row.total}
-            </div>
+            <div style={{ width: 40, fontSize: 12, fontWeight: 600, textAlign: "right", flexShrink: 0 }}>{row.total}</div>
           </div>
         ))}
       </div>
@@ -201,13 +270,10 @@ function ThemePrevalenceChart({ selectedSub }) {
 function ValenceBreakdown({ selectedSub }) {
   const valenceSource = DATA.valenceData[selectedSub] || DATA.valenceData["All"] || {};
   const themes = Object.entries(valenceSource).filter(([, v]) => Object.keys(v).length > 0);
-
   return (
     <div>
       <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 20 }}>
-        {selectedSub === "All"
-          ? "Valence and disposition breakdowns across all subreddits"
-          : `Valence and disposition breakdowns for ${selectedSub}`}
+        {selectedSub === "All" ? "Valence and disposition breakdowns across all subreddits" : `Valence and disposition breakdowns for ${selectedSub}`}
       </div>
       {themes.length === 0 ? (
         <div style={{ fontSize: 13, color: "var(--text3)", padding: 20 }}>No valence data for this selection.</div>
@@ -215,25 +281,30 @@ function ValenceBreakdown({ selectedSub }) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: 16 }}>
           {themes.map(([q, vals]) => {
             const total = Object.values(vals).reduce((s, v) => s + v, 0);
+            const keys = orderedValenceKeys(q, vals);
             return (
               <div key={q} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "1rem 1.25rem" }}>
-                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>{THEME_LABELS[q]}</div>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}><ThemeLabel themeKey={q} /></div>
                 <div style={{ display: "flex", height: 28, borderRadius: 4, overflow: "hidden", marginBottom: 10 }}>
-                  {Object.entries(vals).map(([k, v]) => (
-                    <div key={k} style={{
-                      width: `${(v / total) * 100}%`,
-                      background: VALENCE_COLORS[k] || "#888",
-                      minWidth: v > 0 ? 2 : 0,
-                    }} title={`${VALENCE_LABELS[k] || k}: ${Math.round((v / total) * 100)}%`} />
-                  ))}
+                  {keys.map((k) => {
+                    const v = vals[k] || 0;
+                    return (
+                      <div key={k} style={{
+                        width: `${(v / total) * 100}%`, background: VALENCE_COLORS[k] || "#888", minWidth: v > 0 ? 2 : 0,
+                      }} title={`${VALENCE_LABELS[k] || k}: ${Math.round((v / total) * 100)}%`} />
+                    );
+                  })}
                 </div>
                 <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                  {Object.entries(vals).map(([k, v]) => (
-                    <div key={k} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text2)" }}>
-                      <span style={{ width: 8, height: 8, borderRadius: 2, background: VALENCE_COLORS[k] || "#888", display: "inline-block" }} />
-                      {VALENCE_LABELS[k] || k} {Math.round((v / total) * 100)}%
-                    </div>
-                  ))}
+                  {keys.map((k) => {
+                    const v = vals[k] || 0;
+                    return (
+                      <div key={k} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text2)" }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 2, background: VALENCE_COLORS[k] || "#888", display: "inline-block" }} />
+                        {VALENCE_LABELS[k] || k} {Math.round((v / total) * 100)}%
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             );
@@ -244,12 +315,66 @@ function ValenceBreakdown({ selectedSub }) {
   );
 }
 
+function CrossSubSentiment() {
+  const VALENCE_THEMES = ["q01", "q02", "q03", "q05", "q14", "q15", "q16"];
+  return (
+    <div style={{ marginTop: 32 }}>
+      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Cross-subreddit sentiment comparison</div>
+      <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 20 }}>
+        How sentiment distributions compare across communities for each theme
+      </div>
+      {VALENCE_THEMES.map((q) => {
+        const allVals = {};
+        SUBREDDITS.forEach((sub) => {
+          const vals = (DATA.valenceData[sub] || {})[q] || {};
+          Object.keys(vals).forEach((k) => { allVals[k] = (allVals[k] || 0) + vals[k]; });
+        });
+        const keys = orderedValenceKeys(q, allVals);
+        if (keys.length === 0) return null;
+        return (
+          <div key={q} style={{ marginBottom: 24, background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "16px 20px" }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}><ThemeLabel themeKey={q} /></div>
+            {SUBREDDITS.map((sub) => {
+              const vals = (DATA.valenceData[sub] || {})[q] || {};
+              const total = Object.values(vals).reduce((s, v) => s + v, 0);
+              if (total === 0) return null;
+              return (
+                <div key={sub} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                  <div style={{ width: 130, fontSize: 12, color: SUB_COLORS[sub] || "var(--text2)", fontWeight: 600, textAlign: "right", flexShrink: 0 }}>{sub}</div>
+                  <div style={{ flex: 1, display: "flex", height: 22, borderRadius: 4, overflow: "hidden", background: "var(--bg3)" }}>
+                    {keys.map((k) => {
+                      const v = vals[k] || 0;
+                      return (
+                        <div key={k} style={{
+                          width: `${(v / total) * 100}%`, background: VALENCE_COLORS[k] || "#888", minWidth: v > 0 ? 2 : 0,
+                        }} title={`${VALENCE_LABELS[k] || k}: ${v} (${Math.round((v / total) * 100)}%)`} />
+                      );
+                    })}
+                  </div>
+                  <div style={{ width: 30, fontSize: 11, color: "var(--text3)", textAlign: "right", flexShrink: 0 }}>{total}</div>
+                </div>
+              );
+            })}
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 8 }}>
+              {keys.map((k) => (
+                <div key={k} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "var(--text2)" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 2, background: VALENCE_COLORS[k] || "#888", display: "inline-block" }} />
+                  {VALENCE_LABELS[k] || k}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function PostCard({ post }) {
   const confColor = { high: "#16A34A", medium: "#D97706", low: "#DC2626" };
   const PREVIEW_LEN = 200;
   const preview = post.body && post.body.length > PREVIEW_LEN ? post.body.slice(0, PREVIEW_LEN) + "..." : post.body;
   const hasExtractions = post.extractions && Object.keys(post.extractions).length > 0;
-
   return (
     <div style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "12px 16px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 6 }}>
@@ -266,36 +391,29 @@ function PostCard({ post }) {
           background: (SUB_COLORS[post.subreddit] || "#666") + "18",
           color: SUB_COLORS[post.subreddit] || "#666", fontWeight: 600,
         }}>{post.subreddit}</span>
+        {post.published_at && <span style={{ fontSize: 11, color: "var(--text3)" }}>{formatDate(post.published_at)}</span>}
         {post.themes.map((q) => (
           <span key={q} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "var(--bg3)", color: "var(--text2)" }}>
-            {THEME_LABELS[q]}
+            <ThemeLabel themeKey={q} />
           </span>
         ))}
         {post.pass2_needed && (
-          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "#D9770614", color: "#D97706", fontWeight: 600 }}>
-            Pass 2
-          </span>
+          <span style={{ fontSize: 11, padding: "2px 8px", borderRadius: 99, background: "#D9770614", color: "#D97706", fontWeight: 600 }}>Pass 2</span>
         )}
       </div>
       {preview && <div style={{ fontSize: 13, color: "var(--text2)", lineHeight: 1.5, marginBottom: 6 }}>{preview}</div>}
       {hasExtractions && (
         <div style={{ marginTop: 6, marginBottom: 6, padding: "8px 12px", background: "var(--bg)", borderRadius: 6, borderLeft: "3px solid #D97706" }}>
-          <div style={{ fontSize: 11, fontWeight: 600, color: "#D97706", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-            Pass 2 Extractions
-          </div>
+          <div style={{ fontSize: 11, fontWeight: 600, color: "#D97706", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.5px" }}>Pass 2 Extractions</div>
           {Object.entries(post.extractions).map(([key, value]) => (
             <div key={key} style={{ marginBottom: 4 }}>
-              <span style={{ fontSize: 12, fontWeight: 600, color: "var(--text)" }}>{EXTRACTION_LABELS[key] || key}: </span>
+              <span style={{ fontSize: 12, fontWeight: 600 }}>{EXTRACTION_LABELS[key] || key}: </span>
               <span style={{ fontSize: 12, color: "var(--text2)" }}>{value}</span>
             </div>
           ))}
         </div>
       )}
-      {post.permalink && (
-        <a href={post.permalink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>
-          View on Reddit ↗
-        </a>
-      )}
+      {post.permalink && <a href={post.permalink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>View on Reddit ↗</a>}
     </div>
   );
 }
@@ -319,7 +437,6 @@ function PostBrowser() {
 
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-
   return (
     <div>
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
@@ -333,13 +450,9 @@ function PostBrowser() {
         </select>
         <select value={filterConf} onChange={(e) => setFilterConf(e.target.value)} style={{ fontSize: 13 }}>
           <option value="All">All confidence</option>
-          <option value="high">High confidence</option>
-          <option value="medium">Medium confidence</option>
-          <option value="low">Low confidence</option>
+          <option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option>
         </select>
-        <div style={{ fontSize: 13, color: "var(--text2)", display: "flex", alignItems: "center" }}>
-          {filtered.length} posts
-        </div>
+        <div style={{ fontSize: 13, color: "var(--text2)", display: "flex", alignItems: "center" }}>{filtered.length} posts</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {paged.map((post) => <PostCard key={post.id} post={post} />)}
@@ -347,10 +460,10 @@ function PostBrowser() {
       {totalPages > 1 && (
         <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "center", alignItems: "center" }}>
           <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0}
-                  style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--border)" }}>Prev</button>
+            style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--border)" }}>Prev</button>
           <span style={{ fontSize: 12, color: "var(--text2)" }}>{page + 1} / {totalPages}</span>
           <button onClick={() => setPage(Math.min(totalPages - 1, page + 1))} disabled={page >= totalPages - 1}
-                  style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--border)" }}>Next</button>
+            style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--border)" }}>Next</button>
         </div>
       )}
     </div>
@@ -375,12 +488,9 @@ function ExtractionBrowser() {
 
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
-
   const typeCounts = useMemo(() => {
     const counts = {};
-    EXTRACTION_KEYS.forEach((k) => {
-      counts[k] = DATA.posts.filter((p) => p.extractions && p.extractions[k]).length;
-    });
+    EXTRACTION_KEYS.forEach((k) => { counts[k] = DATA.posts.filter((p) => p.extractions && p.extractions[k]).length; });
     return counts;
   }, []);
 
@@ -389,26 +499,21 @@ function ExtractionBrowser() {
       <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
         <select value={filterType} onChange={(e) => setFilterType(e.target.value)} style={{ fontSize: 13 }}>
           <option value="All">All extraction types</option>
-          {EXTRACTION_KEYS.map((k) => (
-            <option key={k} value={k}>{EXTRACTION_LABELS[k]} ({typeCounts[k]})</option>
-          ))}
+          {EXTRACTION_KEYS.map((k) => <option key={k} value={k}>{EXTRACTION_LABELS[k]} ({typeCounts[k]})</option>)}
         </select>
         <select value={filterSub} onChange={(e) => setFilterSub(e.target.value)} style={{ fontSize: 13 }}>
           <option value="All">All subreddits</option>
           {SUBREDDITS.map((s) => <option key={s} value={s}>{s}</option>)}
         </select>
-        <div style={{ fontSize: 13, color: "var(--text2)", display: "flex", alignItems: "center" }}>
-          {filtered.length} posts
-        </div>
+        <div style={{ fontSize: 13, color: "var(--text2)", display: "flex", alignItems: "center" }}>{filtered.length} posts</div>
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
         {EXTRACTION_KEYS.map((k) => (
-          <div key={k} onClick={() => setFilterType(filterType === k ? "All" : k)}
-               style={{
-                 padding: "8px 14px", borderRadius: "var(--radius)", cursor: "pointer",
-                 background: filterType === k ? "#D9770614" : "var(--bg2)",
-                 border: filterType === k ? "1px solid #D97706" : "1px solid var(--border)",
-               }}>
+          <div key={k} onClick={() => setFilterType(filterType === k ? "All" : k)} style={{
+            padding: "8px 14px", borderRadius: "var(--radius)", cursor: "pointer",
+            background: filterType === k ? "#D9770614" : "var(--bg2)",
+            border: filterType === k ? "1px solid #D97706" : "1px solid var(--border)",
+          }}>
             <div style={{ fontSize: 18, fontWeight: 600, color: filterType === k ? "#D97706" : "var(--text)" }}>{typeCounts[k]}</div>
             <div style={{ fontSize: 11, color: "var(--text2)" }}>{EXTRACTION_LABELS[k]}</div>
           </div>
@@ -416,9 +521,7 @@ function ExtractionBrowser() {
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
         {paged.map((post) => {
-          const entries = Object.entries(post.extractions).filter(([k]) =>
-            filterType === "All" || k === filterType
-          );
+          const entries = Object.entries(post.extractions).filter(([k]) => filterType === "All" || k === filterType);
           return (
             <div key={post.id} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "12px 16px" }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 8 }}>
@@ -427,21 +530,16 @@ function ExtractionBrowser() {
                   background: (SUB_COLORS[post.subreddit] || "#666") + "18",
                   color: SUB_COLORS[post.subreddit] || "#666", fontWeight: 600,
                 }}>{post.subreddit}</span>
+                {post.published_at && <span style={{ fontSize: 11, color: "var(--text3)", flexShrink: 0 }}>{formatDate(post.published_at)}</span>}
                 <div style={{ fontSize: 14, fontWeight: 600, lineHeight: 1.4 }}>{post.title}</div>
               </div>
               {entries.map(([key, value]) => (
                 <div key={key} style={{ marginBottom: 8, padding: "8px 12px", background: "var(--bg)", borderRadius: 6, borderLeft: "3px solid #D97706" }}>
-                  <div style={{ fontSize: 11, fontWeight: 600, color: "#D97706", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                    {EXTRACTION_LABELS[key] || key}
-                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: "#D97706", marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.5px" }}>{EXTRACTION_LABELS[key] || key}</div>
                   <div style={{ fontSize: 13, color: "var(--text)", lineHeight: 1.5 }}>{value}</div>
                 </div>
               ))}
-              {post.permalink && (
-                <a href={post.permalink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>
-                  View on Reddit ↗
-                </a>
-              )}
+              {post.permalink && <a href={post.permalink} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12 }}>View on Reddit ↗</a>}
             </div>
           );
         })}
@@ -449,12 +547,154 @@ function ExtractionBrowser() {
       {totalPages > 1 && (
         <div style={{ display: "flex", gap: 8, marginTop: 16, justifyContent: "center", alignItems: "center" }}>
           <button onClick={() => setPage(Math.max(0, page - 1))} disabled={page === 0}
-                  style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--border)" }}>Prev</button>
+            style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--border)" }}>Prev</button>
           <span style={{ fontSize: 12, color: "var(--text2)" }}>{page + 1} / {totalPages}</span>
           <button onClick={() => setPage(Math.min(totalPages - 1, page + 1))} disabled={page >= totalPages - 1}
-                  style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--border)" }}>Next</button>
+            style={{ padding: "4px 12px", fontSize: 12, borderRadius: 4, cursor: "pointer", background: "var(--bg2)", color: "var(--text)", border: "1px solid var(--border)" }}>Next</button>
         </div>
       )}
+    </div>
+  );
+}
+
+function SentimentTrends() {
+  const VALENCE_THEMES = ["q01", "q02", "q03", "q05", "q14", "q15", "q16"];
+  const trendMonths = DATA.temporal.trendMonths || [];
+  const mv = DATA.temporal.monthlyValence || {};
+  const [selectedTheme, setSelectedTheme] = useState("q01");
+
+  function fmtMonth(m) {
+    const [y, mo] = m.split("-");
+    const names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    return names[parseInt(mo, 10) - 1] + " '" + y.slice(2);
+  }
+
+  if (trendMonths.length === 0) {
+    return <div style={{ fontSize: 13, color: "var(--text3)", padding: 20 }}>Not enough monthly data for trend analysis (need months with 20+ posts).</div>;
+  }
+
+  // For the selected theme, compute per-subreddit valence percentages over time
+  const keys = orderedValenceKeys(selectedTheme,
+    Object.values(DATA.valenceData["All"][selectedTheme] || {}).length > 0
+      ? DATA.valenceData["All"][selectedTheme]
+      : {}
+  );
+
+  return (
+    <div>
+      <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 4 }}>Sentiment trends over time</div>
+      <div style={{ fontSize: 13, color: "var(--text3)", marginBottom: 16 }}>
+        How sentiment distributions within and across communities change over time (months with 20+ posts)
+      </div>
+
+      {/* Theme selector */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
+        {VALENCE_THEMES.map((q) => (
+          <button key={q} onClick={() => setSelectedTheme(q)} style={{
+            padding: "4px 12px", fontSize: 12, borderRadius: 99, cursor: "pointer",
+            background: selectedTheme === q ? "var(--accent)" : "transparent",
+            color: selectedTheme === q ? "#fff" : "var(--text2)",
+            border: selectedTheme === q ? "none" : "1px solid var(--border)",
+          }}>{THEME_LABELS[q]}</button>
+        ))}
+      </div>
+
+      {/* Legend */}
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        {keys.map((k) => (
+          <div key={k} style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 12, color: "var(--text2)" }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: VALENCE_COLORS[k] || "#888", display: "inline-block" }} />
+            {VALENCE_LABELS[k] || k}
+          </div>
+        ))}
+      </div>
+
+      {/* One card per subreddit */}
+      {SUBREDDITS.map((sub) => {
+        return (
+          <div key={sub} style={{ marginBottom: 20, background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "16px 20px" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: SUB_COLORS[sub] || "var(--text)", marginBottom: 10 }}>{sub}</div>
+            <div style={{ display: "flex", gap: 4, alignItems: "flex-end" }}>
+              {trendMonths.map((m) => {
+                const vals = ((mv[m] || {})[sub] || {})[selectedTheme] || {};
+                const total = Object.values(vals).reduce((s, v) => s + v, 0);
+                if (total === 0) {
+                  return (
+                    <div key={m} style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+                      <div style={{ height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <span style={{ fontSize: 10, color: "var(--text3)" }}>—</span>
+                      </div>
+                      <div style={{ fontSize: 9, color: "var(--text3)", marginTop: 4 }}>{fmtMonth(m)}</div>
+                    </div>
+                  );
+                }
+                return (
+                  <div key={m} style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+                    <div style={{ display: "flex", flexDirection: "column", height: 80, borderRadius: 3, overflow: "hidden" }}>
+                      {keys.map((k) => {
+                        const v = vals[k] || 0;
+                        return (
+                          <div key={k} style={{
+                            height: `${(v / total) * 100}%`,
+                            background: VALENCE_COLORS[k] || "#888",
+                            minHeight: v > 0 ? 1 : 0,
+                          }} title={`${fmtMonth(m)} ${sub} — ${VALENCE_LABELS[k] || k}: ${v} (${Math.round((v / total) * 100)}%)`} />
+                        );
+                      })}
+                    </div>
+                    <div style={{ fontSize: 9, color: "var(--text3)", marginTop: 4 }}>{fmtMonth(m)}</div>
+                    <div style={{ fontSize: 9, color: "var(--text3)" }}>n={total}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* All subreddits combined */}
+      <div style={{ marginBottom: 20, background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "16px 20px" }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text)", marginBottom: 10 }}>All subreddits combined</div>
+        <div style={{ display: "flex", gap: 4, alignItems: "flex-end" }}>
+          {trendMonths.map((m) => {
+            // Aggregate across subs for this month
+            const agg = {};
+            SUBREDDITS.forEach((sub) => {
+              const vals = ((mv[m] || {})[sub] || {})[selectedTheme] || {};
+              Object.entries(vals).forEach(([k, v]) => { agg[k] = (agg[k] || 0) + v; });
+            });
+            const total = Object.values(agg).reduce((s, v) => s + v, 0);
+            if (total === 0) {
+              return (
+                <div key={m} style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+                  <div style={{ height: 80, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <span style={{ fontSize: 10, color: "var(--text3)" }}>—</span>
+                  </div>
+                  <div style={{ fontSize: 9, color: "var(--text3)", marginTop: 4 }}>{fmtMonth(m)}</div>
+                </div>
+              );
+            }
+            return (
+              <div key={m} style={{ flex: 1, minWidth: 0, textAlign: "center" }}>
+                <div style={{ display: "flex", flexDirection: "column", height: 80, borderRadius: 3, overflow: "hidden" }}>
+                  {keys.map((k) => {
+                    const v = agg[k] || 0;
+                    return (
+                      <div key={k} style={{
+                        height: `${(v / total) * 100}%`,
+                        background: VALENCE_COLORS[k] || "#888",
+                        minHeight: v > 0 ? 1 : 0,
+                      }} title={`${fmtMonth(m)} All — ${VALENCE_LABELS[k] || k}: ${v} (${Math.round((v / total) * 100)}%)`} />
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 9, color: "var(--text3)", marginTop: 4 }}>{fmtMonth(m)}</div>
+                <div style={{ fontSize: 9, color: "var(--text3)" }}>n={total}</div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -471,9 +711,7 @@ function Dashboard() {
   return (
     <div style={{ padding: "2rem", maxWidth: 960, margin: "0 auto" }}>
       <div style={{ marginBottom: 24 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 600, margin: "0 0 4px" }}>
-          AI societal impact — Reddit classifier results
-        </h1>
+        <h1 style={{ fontSize: 22, fontWeight: 600, margin: "0 0 4px" }}>AI societal impact — Reddit classifier results</h1>
         <div style={{ fontSize: 13, color: "var(--text3)" }}>
           17-theme multi-label classification across {SUBREDDITS.length} subreddits · {totalClassified.toLocaleString()} posts · google/gemini-3-flash-preview via OpenRouter
         </div>
@@ -486,25 +724,22 @@ function Dashboard() {
         <MetricCard label="Pass 2 extracted" value={DATA.extractedCount || 0} sub={`of ${DATA.pass2Count} flagged`} />
       </div>
 
-      <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", marginBottom: 20 }}>
+      <div style={{ display: "flex", gap: 0, borderBottom: "1px solid var(--border)", marginBottom: 20, flexWrap: "wrap" }}>
         {TABS.map((tab, i) => (
-          <button key={tab} onClick={() => setActiveTab(i)}
-            style={{
-              padding: "8px 16px", fontSize: 13, fontWeight: activeTab === i ? 600 : 400,
-              color: activeTab === i ? "var(--text)" : "var(--text2)",
-              background: "transparent", border: "none",
-              borderBottom: activeTab === i ? "2px solid var(--text)" : "2px solid transparent",
-              cursor: "pointer", marginBottom: -1,
-            }}>{tab}</button>
+          <button key={tab} onClick={() => setActiveTab(i)} style={{
+            padding: "8px 16px", fontSize: 13, fontWeight: activeTab === i ? 600 : 400,
+            color: activeTab === i ? "var(--text)" : "var(--text2)",
+            background: "transparent", border: "none",
+            borderBottom: activeTab === i ? "2px solid var(--text)" : "2px solid transparent",
+            cursor: "pointer", marginBottom: -1,
+          }}>{tab}</button>
         ))}
       </div>
 
       {activeTab === 0 && (
         <div>
           <Exemplars />
-          <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 16 }}>
-            Distribution of classified posts by subreddit
-          </div>
+          <div style={{ fontSize: 13, color: "var(--text2)", marginBottom: 16 }}>Distribution of classified posts by subreddit</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 24 }}>
             {SUBREDDITS.map((sub) => (
               <div key={sub} style={{ background: "var(--bg2)", border: "1px solid var(--border)", borderRadius: "var(--radius)", padding: "12px 16px", flex: "1 1 140px" }}>
@@ -513,22 +748,19 @@ function Dashboard() {
                   <span style={{ fontSize: 13, fontWeight: 600 }}>{sub}</span>
                 </div>
                 <div style={{ fontSize: 20, fontWeight: 600 }}>{DATA.subCounts[sub]}</div>
-                <div style={{ fontSize: 12, color: "var(--text3)" }}>
-                  {Math.round((DATA.subCounts[sub] / totalClassified) * 100)}% of corpus
-                </div>
+                <div style={{ fontSize: 12, color: "var(--text3)" }}>{Math.round((DATA.subCounts[sub] / totalClassified) * 100)}% of corpus</div>
               </div>
             ))}
           </div>
           <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>Top themes overall</div>
           {(() => {
             const sorted = THEME_KEYS.map((q) => ({
-              key: q, label: THEME_LABELS[q],
-              total: SUBREDDITS.reduce((s, sub) => s + ((DATA.prevalence[sub] || {})[q] || 0), 0),
+              key: q, total: SUBREDDITS.reduce((s, sub) => s + ((DATA.prevalence[sub] || {})[q] || 0), 0),
             })).sort((a, b) => b.total - a.total).slice(0, 7);
             const max = sorted[0].total || 1;
             return sorted.map((t) => (
               <div key={t.key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                <div style={{ width: 150, fontSize: 12, color: "var(--text2)", textAlign: "right", flexShrink: 0 }}>{t.label}</div>
+                <div style={{ width: 150, fontSize: 12, textAlign: "right", flexShrink: 0 }}><ThemeLabel themeKey={t.key} /></div>
                 <div style={{ flex: 1, background: "var(--bg3)", borderRadius: 4, height: 20, overflow: "hidden" }}>
                   <div style={{ width: `${(t.total / max) * 100}%`, height: "100%", background: "var(--accent)", borderRadius: 4 }} />
                 </div>
@@ -550,11 +782,18 @@ function Dashboard() {
         <div>
           <SubredditFilter selected={sentimentSub} onSelect={setSentimentSub} />
           <ValenceBreakdown selectedSub={sentimentSub} />
+          <CrossSubSentiment />
         </div>
       )}
 
       {activeTab === 3 && <PostBrowser />}
       {activeTab === 4 && <ExtractionBrowser />}
+
+      {activeTab === 5 && <SentimentTrends />}
+
+      {activeTab === 6 && (
+        <div className="methodology-content" dangerouslySetInnerHTML={{ __html: DATA.methodologyHtml || "" }} />
+      )}
     </div>
   );
 }

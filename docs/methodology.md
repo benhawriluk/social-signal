@@ -23,7 +23,7 @@ Each post is classified against 17 binary thematic questions (Q1–Q17). A theme
 | Code | Theme | Sub-fields |
 |------|-------|------------|
 | Q1 | Existential reflection | valence (positive/negative/mixed) |
-| Q2 | Future confidence | direction (more/less confident/mixed) |
+| Q2 | Future agency | direction (more/less confident/mixed) |
 | Q3 | Parasocial attachment | disposition (favorable/negative/mixed) |
 | Q4 | Problematic engagement | engagement_patterns, addiction |
 | Q5 | Anthropomorphization | disposition (favorable/negative/mixed) |

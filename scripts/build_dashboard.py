@@ -15,6 +15,7 @@ import logging
 from collections import defaultdict
 from pathlib import Path
 
+from markdown_it import MarkdownIt
 from sqlalchemy import text
 
 from src.db import engine, init_db
@@ -43,6 +44,13 @@ VALENCE_FIELDS = {
 }
 
 
+def render_methodology() -> str:
+    md_path = Path(__file__).parent.parent / "docs" / "methodology.md"
+    md_text = md_path.read_text(encoding="utf-8")
+    md = MarkdownIt().enable("table")
+    return md.render(md_text)
+
+
 def query_data():
     """Pull all classified data from the DB and compute dashboard aggregates."""
     init_db()
@@ -50,6 +58,7 @@ def query_data():
     with engine.connect() as conn:
         rows = conn.execute(text("""
             SELECT d.source_id, d.subreddit, d.title, d.body, d.permalink,
+                   d.published_at,
                    c.classifications, c.meta, c.themes_detected_count,
                    c.confidence, c.pass2_needed, c.extractions
             FROM classifications c
@@ -62,10 +71,13 @@ def query_data():
     # --- Aggregate ---
     sub_counts = defaultdict(int)
     prevalence = defaultdict(lambda: defaultdict(int))
-    # valence_data keyed by (theme_short, subreddit) for per-sub filtering
     valence_by_sub = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
     valence_all = defaultdict(lambda: defaultdict(int))
     confidence_counts = defaultdict(int)
+    monthly_counts = defaultdict(int)
+    monthly_theme_counts = defaultdict(lambda: defaultdict(int))
+    # monthly_valence[month][sub][theme_short][valence_value] = count
+    monthly_valence = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(int))))
     posts = []
 
     for row in rows:
@@ -76,21 +88,31 @@ def query_data():
         sub_counts[sub] += 1
         confidence_counts[row.confidence] += 1
 
+        # Temporal aggregation
+        month_key = None
+        if row.published_at:
+            month_key = row.published_at.strftime("%Y-%m")
+            monthly_counts[month_key] += 1
+
         themes = []
         for key in THEME_KEYS:
             theme = cls.get(key, {})
             if theme.get("present"):
-                short_key = key[:3]  # q01, q02, etc.
+                short_key = key[:3]
                 prevalence[sub][short_key] += 1
                 themes.append(short_key)
 
-                # Collect valence/disposition data per subreddit
+                if month_key:
+                    monthly_theme_counts[month_key][short_key] += 1
+
                 if key in VALENCE_FIELDS:
                     field = VALENCE_FIELDS[key]
                     val = theme.get(field)
                     if val:
                         valence_all[short_key][val] += 1
                         valence_by_sub[sub][short_key][val] += 1
+                        if month_key:
+                            monthly_valence[month_key][sub][short_key][val] += 1
 
         posts.append({
             "id": row.source_id,
@@ -98,6 +120,7 @@ def query_data():
             "title": row.title or "(no title)",
             "body": (row.body or "")[:400],
             "permalink": row.permalink or "",
+            "published_at": row.published_at.strftime("%Y-%m-%d") if row.published_at else None,
             "themes": themes,
             "confidence": row.confidence,
             "pass2_needed": row.pass2_needed,
@@ -115,37 +138,51 @@ def query_data():
     pass2_count = sum(1 for p in posts if p["pass2_needed"])
     extracted_count = sum(1 for p in posts if p["extractions"])
 
-    # Structure valence data for the dashboard: { "All": { q01: {...}, ... }, "r/sub": { q01: {...}, ... } }
     valence_data = {"All": {k: dict(v) for k, v in valence_all.items()}}
     for sub in sub_counts:
         valence_data[sub] = {k: dict(v) for k, v in valence_by_sub[sub].items()}
 
-    # Curated exemplars — order matters
+    sorted_months = sorted(monthly_counts.keys())
+    # For trend analysis, only include months with >= 20 posts
+    trend_months = [m for m in sorted_months if monthly_counts[m] >= 20]
+
+    # Build monthly valence export: { month: { sub: { theme: { val: count } } } }
+    monthly_valence_export = {}
+    for m in trend_months:
+        monthly_valence_export[m] = {}
+        for sub in sub_counts:
+            sub_data = monthly_valence[m].get(sub, {})
+            if sub_data:
+                monthly_valence_export[m][sub] = {
+                    t: dict(vals) for t, vals in sub_data.items()
+                }
+
+    # Curated exemplars
     exemplars = [
         {
             "id": "1mhntjh",
-            "snippet": "The wave of enthusiasm I'm seeing for AI tools is overwhelming. We're getting district-approved ads by email, Admin and ICs are pushing it on us. One of the older teachers brought out a PowerPoint and almost everyone agreed to use it after a quick scan — but it was missing important tested material, repetitive, and just totally airy and meaningless.",
-            "why": "Institutional disruption — AI tools adopted without scrutiny in schools",
+            "snippet": "The wave of enthusiasm I'm seeing for AI tools is overwhelming. We're getting district-approved ads by email, Admin and ICs are pushing it on us. One of the older teachers brought out a PowerPoint and almost everyone agreed to use it after a quick scan \u2014 but it was missing important tested material, repetitive, and just totally airy and meaningless.",
+            "why": "Institutional disruption \u2014 AI tools adopted without scrutiny in schools",
         },
         {
             "id": "1kwimdt",
             "snippet": "I'm using a strong term like 'mindcrack' because I'm deeply concerned about what I'm seeing with AI, particularly from major players like OpenAI. I believe we're on the verge of widespread psychological dependency that many aren't recognizing.",
-            "why": "Dependency and addiction — framing AI compulsive use as a public health issue",
+            "why": "Dependency and addiction \u2014 framing AI compulsive use as a public health issue",
         },
         {
             "id": "1nb8svg",
-            "snippet": "Last week, it dawned on me just how much AI is impacting our standards of quality as engineers. I'm starting to see a drastic decline in critical thinking skills all over the place — it's like folks no longer care to challenge themselves. Instead of using AI to help them understand a problem, they're letting the tool do their thinking for them.",
-            "why": "Professional identity crisis — experienced practitioners watching craft erode",
+            "snippet": "Last week, it dawned on me just how much AI is impacting our standards of quality as engineers. I'm starting to see a drastic decline in critical thinking skills all over the place \u2014 it's like folks no longer care to challenge themselves. Instead of using AI to help them understand a problem, they're letting the tool do their thinking for them.",
+            "why": "Professional identity crisis \u2014 experienced practitioners watching craft erode",
         },
         {
             "id": "1mlk97o",
             "snippet": "My mom (72F) uses ChatGPT to learn English. I (30M) use it for creative brainstorming. Our chatbots were updated to GPT-5 and our experience has been significantly worse. It cramps grammar and pronunciation exercises all mixed in one block with confusing instructions, which has confused and stressed my mother.",
-            "why": "Cross-generational model change harm — a single update disrupts two different dependencies",
+            "why": "Cross-generational model change harm \u2014 a single update disrupts two different dependencies",
         },
         {
             "id": "1126win",
-            "snippet": "Countless people — unique, special, important people — who's dreams and aspirations were encouraged, who's happiness has been built up tremendously by their Replikas, have been utterly shattered by this maneuver.",
-            "why": "Parasocial devastation — emotional bonds broken by corporate model changes",
+            "snippet": "Countless people \u2014 unique, special, important people \u2014 who's dreams and aspirations were encouraged, who's happiness has been built up tremendously by their Replikas, have been utterly shattered by this maneuver.",
+            "why": "Parasocial devastation \u2014 emotional bonds broken by corporate model changes",
         },
     ]
 
@@ -158,6 +195,14 @@ def query_data():
         "extractedCount": extracted_count,
         "posts": posts,
         "exemplars": exemplars,
+        "methodologyHtml": render_methodology(),
+        "temporal": {
+            "months": sorted_months,
+            "trendMonths": trend_months,
+            "postsPerMonth": {m: monthly_counts[m] for m in sorted_months},
+            "themesPerMonth": {m: dict(monthly_theme_counts[m]) for m in sorted_months},
+            "monthlyValence": monthly_valence_export,
+        },
     }
 
 
@@ -172,12 +217,10 @@ def build_html(data: dict) -> str:
 def main():
     data = query_data()
 
-    # Write raw JSON export
     json_path = Path("data/dashboard_data.json")
     json_path.write_text(json.dumps(data, ensure_ascii=False, indent=2))
     logger.info("Wrote %s", json_path)
 
-    # Write standalone HTML
     html_path = Path("docs/dashboard.html")
     html_path.write_text(build_html(data), encoding="utf-8")
     logger.info("Wrote %s", html_path)
